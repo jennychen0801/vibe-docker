@@ -17,8 +17,8 @@ import {
   FileCheck
 } from 'lucide-react';
 
-// API Base Url (Proxied to backend via Vite)
-const API_URL = '/api';
+// API Base Url (Use environment variable in production, fallback to '/api' in dev proxy)
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface User {
   id: number;
