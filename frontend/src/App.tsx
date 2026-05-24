@@ -18,7 +18,14 @@ import {
 } from 'lucide-react';
 
 // API Base Url (Use environment variable in production, fallback to '/api' in dev proxy)
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = (import.meta as any).env.VITE_API_URL || '/api';
+
+// Helper to calculate hours between two timestamps
+const calculateHours = (start: string, end: string): number => {
+  const diffMs = new Date(end).getTime() - new Date(start).getTime();
+  if (diffMs <= 0) return 0;
+  return Number((diffMs / (1000 * 60 * 60)).toFixed(2));
+};
 
 interface User {
   id: number;
@@ -83,7 +90,7 @@ function App() {
   // Business state
   const [balances, setBalances] = useState({ annual_hours: 0, compensatory_hours: 0 });
   const [todayClocks, setTodayClocks] = useState<ClockRecord[]>([]);
-  const [clockHistory, setClockHistory] = useState<ClockRecord[]>([]);
+  // const [clockHistory, setClockHistory] = useState<ClockRecord[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
   const [overtimeHistory, setOvertimeHistory] = useState<OvertimeRequest[]>([]);
@@ -174,9 +181,9 @@ function App() {
   const fetchPunchData = async () => {
     try {
       const today = await apiFetch('/clock/today');
-      const history = await apiFetch('/clock/history');
+      // const history = await apiFetch('/clock/history');
       setTodayClocks(today);
-      setClockHistory(history);
+      // setClockHistory(history);
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -264,7 +271,7 @@ function App() {
     
     const sendClockRequest = async (coords: any) => {
       try {
-        const record = await apiFetch('/clock', {
+        await apiFetch('/clock', {
           method: 'POST',
           body: JSON.stringify({ type, gps_coords: coords })
         });
@@ -987,7 +994,7 @@ function App() {
                       type="submit" 
                       className="btn-primary"
                       disabled={
-                        leaveStart && leaveEnd && calculateHours(leaveStart, leaveEnd) > (leaveType === 'ANNUAL' ? balances.annual_hours : balances.compensatory_hours)
+                        !!(leaveStart && leaveEnd && calculateHours(leaveStart, leaveEnd) > (leaveType === 'ANNUAL' ? balances.annual_hours : balances.compensatory_hours))
                       }
                       style={{ 
                         marginTop: '0.5rem',
@@ -1131,7 +1138,7 @@ function App() {
                           gap: '8px'
                         }}
                       >
-                        <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontWeight: 600 }}>
                             🛠️ 加加班申請
                           </span>
