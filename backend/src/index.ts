@@ -22,7 +22,7 @@ app.use(express.json());
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkey';
 
 // Middleware for JWT Authentication
-const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
@@ -32,6 +32,20 @@ const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     req.user = decoded;
+
+    // Check if password change is required
+    const userRes = await pool.query('SELECT must_change_password FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length > 0 && userRes.rows[0].must_change_password) {
+      const isAllowedRoute = (req.path === '/api/auth/me' && req.method === 'GET') || 
+                             (req.path === '/api/auth/password' && req.method === 'PUT');
+      if (!isAllowedRoute) {
+        return res.status(403).json({ 
+          error: 'Password change required', 
+          code: 'PASSWORD_CHANGE_REQUIRED' 
+        });
+      }
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
@@ -47,10 +61,62 @@ const adminMiddleware = (req: AuthRequest, res: Response, next: NextFunction) =>
 };
 
 // Helper to calculate hours between two timestamps
-const calculateHours = (start: string, end: string): number => {
-  const diffMs = new Date(end).getTime() - new Date(start).getTime();
-  if (diffMs <= 0) return 0;
-  return Number((diffMs / (1000 * 60 * 60)).toFixed(2));
+const parseAsUTC = (dateStr: string): Date => {
+  const cleanStr = dateStr.slice(0, 19).replace(' ', 'T');
+  return new Date(cleanStr + 'Z');
+};
+
+const calculateHours = (startStr: string, endStr: string): number => {
+  const start = parseAsUTC(startStr);
+  const end = parseAsUTC(endStr);
+  if (start.getTime() >= end.getTime()) return 0;
+
+  let totalMilliseconds = 0;
+
+  const currentDay = new Date(start);
+  currentDay.setUTCHours(0, 0, 0, 0);
+
+  const lastDay = new Date(end);
+  lastDay.setUTCHours(0, 0, 0, 0);
+
+  while (currentDay.getTime() <= lastDay.getTime()) {
+    const dayOfWeek = currentDay.getUTCDay(); // 0 = Sunday, 6 = Saturday
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dayStart = new Date(currentDay);
+      dayStart.setUTCHours(9, 0, 0, 0);
+
+      const dayEnd = new Date(currentDay);
+      dayEnd.setUTCHours(18, 0, 0, 0);
+
+      const lunchStart = new Date(currentDay);
+      lunchStart.setUTCHours(12, 0, 0, 0);
+
+      const lunchEnd = new Date(currentDay);
+      lunchEnd.setUTCHours(13, 0, 0, 0);
+
+      const overlapStart = new Date(Math.max(start.getTime(), dayStart.getTime()));
+      const overlapEnd = new Date(Math.min(end.getTime(), dayEnd.getTime()));
+
+      if (overlapStart.getTime() < overlapEnd.getTime()) {
+        const amStart = Math.max(overlapStart.getTime(), dayStart.getTime());
+        const amEnd = Math.min(overlapEnd.getTime(), lunchStart.getTime());
+        if (amStart < amEnd) {
+          totalMilliseconds += (amEnd - amStart);
+        }
+
+        const pmStart = Math.max(overlapStart.getTime(), lunchEnd.getTime());
+        const pmEnd = Math.min(overlapEnd.getTime(), dayEnd.getTime());
+        if (pmStart < pmEnd) {
+          totalMilliseconds += (pmEnd - pmStart);
+        }
+      }
+    }
+
+    currentDay.setUTCDate(currentDay.getUTCDate() + 1);
+  }
+
+  const totalHours = totalMilliseconds / (1000 * 60 * 60);
+  return Number(totalHours.toFixed(2));
 };
 
 // Database seed function
@@ -143,7 +209,13 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
     res.json({
       token,
-      user: { id: user.id, email: user.email, role: user.role, name: user.name }
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role, 
+        name: user.name, 
+        must_change_password: user.must_change_password 
+      }
     });
   } catch (err) {
     console.error(err);
@@ -151,8 +223,51 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/auth/me', authMiddleware, (req: AuthRequest, res: Response) => {
-  res.json({ user: req.user });
+app.get('/api/auth/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userRes = await pool.query(
+      'SELECT id, email, role, name, must_change_password FROM users WHERE id = $1', 
+      [req.user!.id]
+    );
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ user: userRes.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching profile' });
+  }
+});
+
+app.put('/api/auth/password', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Old password and new password are required' });
+  }
+
+  try {
+    const userRes = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user!.id]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userRes.rows[0];
+    const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Invalid old password' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, must_change_password = false WHERE id = $2',
+      [hash, req.user!.id]
+    );
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error during password update' });
+  }
 });
 
 // -----------------------------------------------------------------------------
@@ -255,6 +370,16 @@ app.put('/api/users/:id', authMiddleware, adminMiddleware, async (req: AuthReque
            DO UPDATE SET annual_hours = EXCLUDED.annual_hours, 
                          compensatory_hours = EXCLUDED.compensatory_hours`,
           [userId, annual_hours || 0, compensatory_hours || 0]
+        );
+
+        await client.query(
+          `INSERT INTO approval_logs (request_type, request_id, operator_id, action, comment) 
+           VALUES ('BALANCE', $1, $2, 'APPROVE', $3)`,
+          [
+            userId,
+            req.user!.id,
+            `管理員調整額度：年假 = ${annual_hours !== undefined ? annual_hours : '未變更'} 小時, 補休 = ${compensatory_hours !== undefined ? compensatory_hours : '未變更'} 小時`
+          ]
         );
       }
 
@@ -366,6 +491,18 @@ app.post('/api/leaves', authMiddleware, async (req: AuthRequest, res: Response) 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Check for overlapping requests
+      const overlapRes = await client.query(
+        `SELECT COUNT(*) FROM leave_requests 
+         WHERE user_id = $1 
+           AND status != 'REJECTED' 
+           AND (start_time, end_time) OVERLAPS ($2::timestamp with time zone, $3::timestamp with time zone)`,
+        [userId, start_time, end_time]
+      );
+      if (parseInt(overlapRes.rows[0].count) > 0) {
+        return res.status(400).json({ error: 'Time range overlaps with an existing request' });
+      }
 
       // Check balance
       const balanceRes = await client.query(

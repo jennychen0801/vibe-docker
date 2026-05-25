@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   role VARCHAR(50) NOT NULL CHECK (role IN ('ADMIN', 'MANAGER', 'USER')),
   name VARCHAR(255) NOT NULL,
   manager_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  must_change_password BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS leave_balances (
 
 CREATE TABLE IF NOT EXISTS approval_logs (
   id SERIAL PRIMARY KEY,
-  request_type VARCHAR(50) NOT NULL CHECK (request_type IN ('LEAVE', 'OVERTIME')),
+  request_type VARCHAR(50) NOT NULL CHECK (request_type IN ('LEAVE', 'OVERTIME', 'BALANCE')),
   request_id INTEGER NOT NULL,
   operator_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   action VARCHAR(50) NOT NULL CHECK (action IN ('APPROVE', 'REJECT')),

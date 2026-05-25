@@ -14,17 +14,84 @@ import {
   UserCheck,
   AlertCircle,
   FileText,
-  FileCheck
+  FileCheck,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 // API Base Url (Use environment variable in production, fallback to '/api' in dev proxy)
 const API_URL = (import.meta as any).env.VITE_API_URL || '/api';
 
 // Helper to calculate hours between two timestamps
-const calculateHours = (start: string, end: string): number => {
-  const diffMs = new Date(end).getTime() - new Date(start).getTime();
-  if (diffMs <= 0) return 0;
-  return Number((diffMs / (1000 * 60 * 60)).toFixed(2));
+const parseAsUTC = (dateStr: string): Date => {
+  if (!dateStr) return new Date(NaN);
+  const cleanStr = dateStr.slice(0, 19).replace(' ', 'T');
+  return new Date(cleanStr + 'Z');
+};
+
+const calculateHours = (startStr: string, endStr: string): number => {
+  if (!startStr || !endStr) return 0;
+  const start = parseAsUTC(startStr);
+  const end = parseAsUTC(endStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+  if (start.getTime() >= end.getTime()) return 0;
+
+  let totalMilliseconds = 0;
+
+  const currentDay = new Date(start);
+  currentDay.setUTCHours(0, 0, 0, 0);
+
+  const lastDay = new Date(end);
+  lastDay.setUTCHours(0, 0, 0, 0);
+
+  while (currentDay.getTime() <= lastDay.getTime()) {
+    const dayOfWeek = currentDay.getUTCDay(); // 0 = Sunday, 6 = Saturday
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dayStart = new Date(currentDay);
+      dayStart.setUTCHours(9, 0, 0, 0);
+
+      const dayEnd = new Date(currentDay);
+      dayEnd.setUTCHours(18, 0, 0, 0);
+
+      const lunchStart = new Date(currentDay);
+      lunchStart.setUTCHours(12, 0, 0, 0);
+
+      const lunchEnd = new Date(currentDay);
+      lunchEnd.setUTCHours(13, 0, 0, 0);
+
+      const overlapStart = new Date(Math.max(start.getTime(), dayStart.getTime()));
+      const overlapEnd = new Date(Math.min(end.getTime(), dayEnd.getTime()));
+
+      if (overlapStart.getTime() < overlapEnd.getTime()) {
+        const amStart = Math.max(overlapStart.getTime(), dayStart.getTime());
+        const amEnd = Math.min(overlapEnd.getTime(), lunchStart.getTime());
+        if (amStart < amEnd) {
+          totalMilliseconds += (amEnd - amStart);
+        }
+
+        const pmStart = Math.max(overlapStart.getTime(), lunchEnd.getTime());
+        const pmEnd = Math.min(overlapEnd.getTime(), dayEnd.getTime());
+        if (pmStart < pmEnd) {
+          totalMilliseconds += (pmEnd - pmStart);
+        }
+      }
+    }
+
+    currentDay.setUTCDate(currentDay.getUTCDate() + 1);
+  }
+
+  const totalHours = totalMilliseconds / (1000 * 60 * 60);
+  return Number(totalHours.toFixed(2));
+};
+
+const getTodayDateTimeString = (hours: number, minutes: number = 0): string => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  return `${year}-${month}-${date}T${hh}:${mm}`;
 };
 
 interface User {
@@ -84,8 +151,19 @@ function App() {
   const [authError, setAuthError] = useState('');
 
   // UI state
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
   const [currentTab, setCurrentTab] = useState<'punch' | 'leave' | 'overtime' | 'approvals' | 'admin'>('punch');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.add('theme-light');
+    } else {
+      root.classList.remove('theme-light');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   // Business state
   const [balances, setBalances] = useState({ annual_hours: 0, compensatory_hours: 0 });
@@ -100,8 +178,8 @@ function App() {
   // Forms state
   // Leave Form
   const [leaveType, setLeaveType] = useState<'ANNUAL' | 'COMPENSATORY'>('ANNUAL');
-  const [leaveStart, setLeaveStart] = useState('');
-  const [leaveEnd, setLeaveEnd] = useState('');
+  const [leaveStart, setLeaveStart] = useState(getTodayDateTimeString(9));
+  const [leaveEnd, setLeaveEnd] = useState(getTodayDateTimeString(18));
   const [leaveReason, setLeaveReason] = useState('');
   const [leaveProxy, setLeaveProxy] = useState('');
   const [leaveApprover, setLeaveApprover] = useState('');
@@ -323,8 +401,8 @@ function App() {
         })
       });
       showToast('請假申請已送出，目前待職務代理人簽核。');
-      setLeaveStart('');
-      setLeaveEnd('');
+      setLeaveStart(getTodayDateTimeString(9));
+      setLeaveEnd(getTodayDateTimeString(18));
       setLeaveReason('');
       setLeaveProxy('');
       fetchLeaveData();
@@ -510,6 +588,30 @@ function App() {
           position: 'relative',
           overflow: 'hidden'
         }}>
+          {/* Theme Toggle Button */}
+          <button 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            style={{ 
+              position: 'absolute',
+              top: '1rem',
+              right: '1rem',
+              zIndex: 10,
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '8px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              transition: 'background-color 0.2s'
+            }}
+            title={theme === 'dark' ? '切換至亮色模式' : '切換至暗色模式'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+
           {/* Ambient Glows */}
           <div style={{
             position: 'absolute',
@@ -659,6 +761,21 @@ function App() {
               {user.role === 'ADMIN' ? '系統管理員' : user.role === 'MANAGER' ? '部門主管' : '一般員工'}
             </div>
           </div>
+          <button 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--text-secondary)', 
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '6px'
+            }}
+            title={theme === 'dark' ? '切換至亮色模式' : '切換至暗色模式'}
+          >
+            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
           <button 
             onClick={handleLogout}
             style={{ 
