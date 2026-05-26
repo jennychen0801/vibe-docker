@@ -94,6 +94,18 @@ const getTodayDateTimeString = (hours: number, minutes: number = 0): string => {
   return `${year}-${month}-${date}T${hh}:${mm}`;
 };
 
+const formatDateTime = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const date = String(d.getUTCDate()).padStart(2, '0');
+  const hours = String(d.getUTCHours()).padStart(2, '0');
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${year}/${month}/${date} ${hours}:${minutes}`;
+};
+
 interface User {
   id: number;
   email: string;
@@ -1291,7 +1303,7 @@ function App() {
                           {renderStatusBadge(req.status)}
                         </div>
                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          時間：{new Date(req.start_time).toLocaleString()} ~ {new Date(req.end_time).toLocaleString()}
+                          時間：{formatDateTime(req.start_time)} ~ {formatDateTime(req.end_time)}
                           <br />
                           時數：{calculateHours(req.start_time, req.end_time)} 小時
                           <br />
@@ -1453,7 +1465,7 @@ function App() {
                         </div>
 
                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          時間：{new Date(lr.start_time).toLocaleString()} ~ {new Date(lr.end_time).toLocaleString()}
+                          時間：{formatDateTime(lr.start_time)} ~ {formatDateTime(lr.end_time)}
                           <br />
                           總時數：{calculateHours(lr.start_time, lr.end_time)} 小時
                           <br />
