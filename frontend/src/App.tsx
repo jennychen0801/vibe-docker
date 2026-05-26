@@ -1403,12 +1403,12 @@ function App() {
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontWeight: 600 }}>
-                            🛠️ 加加班申請
+                            🛠️ 加班申請
                           </span>
                           {renderStatusBadge(req.status)}
                         </div>
                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          加班日期：{req.date}
+                          加班日期：{req.date ? req.date.slice(0, 10) : ''}
                           <br />
                           申報時數：{req.hours} 小時
                           <br />
@@ -1538,7 +1538,7 @@ function App() {
                         </div>
 
                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          加班日期：{ot.date}
+                          加班日期：{ot.date ? ot.date.slice(0, 10) : ''}
                           <br />
                           申報時數：{ot.hours} 小時
                           <br />
