@@ -189,6 +189,12 @@ function App() {
   const [otHours, setOtHours] = useState('');
   const [otReason, setOtReason] = useState('');
 
+  // Force Password Change Form state
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwChangeError, setPwChangeError] = useState('');
+
   // Admin user form modal
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -377,6 +383,28 @@ function App() {
       );
     } else {
       sendClockRequest(null);
+    }
+  };
+
+  const handleForcePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwChangeError('');
+    if (newPassword !== confirmPassword) {
+      setPwChangeError('新密碼與確認密碼不符');
+      return;
+    }
+    try {
+      await apiFetch('/auth/password', {
+        method: 'PUT',
+        body: JSON.stringify({ oldPassword, newPassword })
+      });
+      showToast('密碼變更成功！系統已解鎖。');
+      setUser((prev: any) => ({ ...prev, must_change_password: false }));
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setPwChangeError(err.message);
     }
   };
 
@@ -715,6 +743,112 @@ function App() {
   // Dashboard Layout
   return (
     <div style={{ display: 'flex', minHeight: '100vh', flexDirection: 'column' }}>
+      {user && user.must_change_password && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(16px)',
+          zIndex: 99999,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '1rem'
+        }}>
+          <div className="glass-card" style={{
+            width: '100%',
+            maxWidth: '400px',
+            padding: '2.5rem',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            position: 'relative'
+          }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', textAlign: 'center' }}>
+              🔒 首次登入安全防護
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', textAlign: 'center', lineHeight: '1.5' }}>
+              為了您的帳號安全，系統要求您在使用臨時密碼首次登入時，必須先變更密碼才能繼續使用出缺勤系統。
+            </p>
+
+            {pwChangeError && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid var(--accent-red)',
+                color: '#fca5a5',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                marginBottom: '1.25rem',
+                fontSize: '0.9rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <AlertCircle size={16} />
+                <span>{pwChangeError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleForcePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>目前臨時密碼</label>
+                <input
+                  type="password"
+                  className="glass-input"
+                  placeholder="請輸入臨時密碼"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>設定新密碼</label>
+                <input
+                  type="password"
+                  className="glass-input"
+                  placeholder="請設定新密碼"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>確認新密碼</label>
+                <input
+                  type="password"
+                  className="glass-input"
+                  placeholder="請再次輸入新密碼"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ marginTop: '1rem', padding: '12px' }}>
+                更新密碼並解除鎖定
+              </button>
+            </form>
+            
+            <button 
+              onClick={handleLogout}
+              className="btn-secondary"
+              style={{
+                width: '100%',
+                marginTop: '0.75rem',
+                padding: '10px',
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                borderColor: 'rgba(255, 255, 255, 0.05)'
+              }}
+            >
+              取消並登出
+            </button>
+          </div>
+        </div>
+      )}
       {/* Toast Notification */}
       {toast && (
         <div style={{
